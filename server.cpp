@@ -22,6 +22,17 @@ extern "C"
     #include <arpa/inet.h>
 }
 
+constexpr 
+unsigned int hash(const char* str, int h = 0)
+{
+    return !str[h] ? 5381 : (hash(str, h+1)*33) ^ str[h];
+}
+constexpr int operator "" _hash(char const* p, size_t)
+{
+	return hash(p);
+}
+
+
 inline void check_error(std::string && type, int err)
 {
 	if(err < 0)
@@ -88,11 +99,11 @@ int main(int argc, char *argv[])
         socklen_t    addrlen  = sizeof(client_addr);
         unsigned int clientfd = accept(socketfd, (struct sockaddr*)&client_addr, &addrlen);
 
-        Chatter gopher(clientfd, client_addr, addrlen);
-        chatters.push_back(std::thread([&internel_conn_mtx, &internel_conn, gopher] {
+        Chatter rat(clientfd, client_addr, addrlen);
+        chatters.push_back(std::thread([&internel_conn_mtx, &internel_conn, &rat] {
 	        Message    message;
 	        std::mutex message_mtx;
-
+	        Chatter gopher = rat;
 
 	        auto comm_handler = [&gopher, &message]{
 		        std::string greet("[Server] Hello, " + gopher.name + "!" +
@@ -124,8 +135,34 @@ int main(int argc, char *argv[])
 							arguments = space.substr(pos + 1);
 							std::cout << "rcv cmd: [" << cmd << "], arg:[" << arguments << "]\n";
 						}
-						//switch
-						
+						else
+						{
+							cmd = space;
+						}
+
+
+						switch(hash(cmd.c_str()))
+						{
+						case "who"_hash: 
+							std::cout << "[[[[who]]]]?: you are " << gopher.name << std::endl;
+							break;
+						case "name"_hash:
+							gopher.name = arguments;
+							break;
+    
+						case "tell"_hash:
+							break;
+    
+						case "yell"_hash:
+							break;
+    
+						case "exit"_hash:
+							break;
+    
+						default:
+							std::cerr << "Unknown command: " << cmd << arguments << std::endl;
+							break;
+						}						
 					}
 					std::cout << buf;
 				}
