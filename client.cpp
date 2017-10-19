@@ -21,7 +21,7 @@ inline void check_error(std::string && type, int err)
 	if(err < 0)
 	{
 		std::cout << type << " failed. err: [" << err << "]. Reason: " << std::strerror(errno) << std::endl;
-		exit(1);
+		std::exit(1);
 	}
 }
 
@@ -30,7 +30,7 @@ inline void check_error(std::string && type, int err, std::function<bool(int)> f
 	if(f(err))
 	{
 		std::cout << type << " failed. err: [" << err << "]. Reason: " << std::strerror(errno) << std::endl;
-		exit(1);
+		std::exit(1);
 	}
 }
 
@@ -51,11 +51,10 @@ int main(int argc, char *argv[])
 	
 	int err = connect(socketfd, (sockaddr *)&socket_in, sizeof(socket_in));
 	check_error("connection to ...", err);
-
 	auto receiver = std::async(std::launch::async, [&socketfd](){
+			char buf[1000];
 			for(;;)
 			{
-				char buf[1000];
 				int n = recv(socketfd, buf, sizeof(buf), 0);
 				check_error("recving...", n, [](int n){return n == 0;});
 				buf[n] = '\0';
