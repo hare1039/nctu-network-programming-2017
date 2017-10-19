@@ -103,7 +103,7 @@ int main(int argc, char *argv[])
         chatters.push_back(std::thread([&internel_conn_mtx, &internel_conn, &rat] {
 	        Message    message;
 	        std::mutex message_mtx;
-	        Chatter gopher = rat;
+	        Chatter    gopher = rat;
 
 	        auto comm_handler = [&gopher, &message]{
 		        std::string greet("[Server] Hello, " + gopher.name + "!" +
@@ -143,9 +143,13 @@ int main(int argc, char *argv[])
 
 						switch(hash(cmd.c_str()))
 						{
-						case "who"_hash: 
-							std::cout << "[[[[who]]]]?: you are " << gopher.name << std::endl;
+						case "who"_hash:
+						{
+							std::string data = "who?: you are " + gopher.name + "\n";
+							size_t err = send(gopher.clientfd, data.c_str(), data.size(), 0);
+							check_error("sending...", err);
 							break;
+						}
 						case "name"_hash:
 							gopher.name = arguments;
 							break;
