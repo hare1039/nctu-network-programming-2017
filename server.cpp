@@ -14,15 +14,15 @@
 #endif
 
 extern "C"
-{	
+{
     #include <sys/socket.h>
     #include <unistd.h>
-    #include <sys/types.h> 
+    #include <sys/types.h>
     #include <netinet/in.h>
     #include <arpa/inet.h>
 }
 
-constexpr 
+constexpr
 unsigned int hash(const char* str, int h = 0)
 {
     return !str[h] ? 5381 : (hash(str, h+1)*33) ^ str[h];
@@ -61,13 +61,27 @@ struct Chatter
 	Chatter(int fd, struct sockaddr_in in, int len):
 		clientfd(fd),
 		client_addr(in),
-		addrlen(len){}	
+		addrlen(len){}
 };
 
 struct Message
 {
 	std::string data;
 	std::string receiver;
+	std::string sender;
+	std::string cmd;
+	void clear()
+	{
+		cmd = sender = data = receiver = "";
+	}
+
+	std::string summery() const
+	{
+		return std::move("{\n  cmd:      " + cmd + ",\n"
+		                 +  "  sender:   " + sender + ",\n"
+		                 +  "  receiver: " + receiver + ",\n"
+		                 +  "  data:     " + data + "}\n");
+	}
 };
 
 
@@ -79,7 +93,7 @@ int main(int argc, char *argv[])
 	check_error("Create socket", socketfd);
 	// socket conn setup
 	sockaddr_in socket_in;
-	std::memset(&socket_in, 0, sizeof(sockaddr_in));	
+	std::memset(&socket_in, 0, sizeof(sockaddr_in));
 	socket_in.sin_family      = AF_INET;
 	socket_in.sin_port        = htons(std::stoi(argv[1]));
 	socket_in.sin_addr.s_addr = INADDR_ANY;
@@ -89,8 +103,10 @@ int main(int argc, char *argv[])
 	listen(socketfd, 300);
 
 	std::list<std::thread>  chatters;
-	std::mutex              internel_conn_mtx;
-	std::condition_variable internel_conn;
+	std::condition_variable message_cv;
+	std::mutex              message_mtx;
+	Message                 message;
+
 
 
 	for(;;)
@@ -100,12 +116,10 @@ int main(int argc, char *argv[])
         unsigned int clientfd = accept(socketfd, (struct sockaddr*)&client_addr, &addrlen);
 
         Chatter rat(clientfd, client_addr, addrlen);
-        chatters.push_back(std::thread([&internel_conn_mtx, &internel_conn, &rat] {
-	        Message    message;
-	        std::mutex message_mtx;
+        chatters.push_back(std::thread([&message_cv, &message, &message_mtx, &rat] {
 	        Chatter    gopher = rat;
 
-	        auto comm_handler = [&gopher, &message]{
+	        auto conn_handler = [&gopher, &message, &message_cv, &message_mtx]{
 		        std::string greet("[Server] Hello, " + gopher.name + "!" +
 		                          " From: " + inet_ntoa(gopher.client_addr.sin_addr) + ":" +
 		                          std::to_string(ntohs(gopher.client_addr.sin_port)) + "\n");
@@ -122,6 +136,7 @@ int main(int argc, char *argv[])
 					buf[n] = '\0';
 					buf_unlimited += buf;
 					auto pos = buf_unlimited.find("\n");
+
 					if(pos != std::string::npos)
 					{
 						std::string space = buf_unlimited.substr(0,  pos);
@@ -143,47 +158,87 @@ int main(int argc, char *argv[])
 
 						switch(hash(cmd.c_str()))
 						{
-						case "who"_hash:
-						{
-							std::string data = "who?: you are " + gopher.name + "\n";
-							size_t err = send(gopher.clientfd, data.c_str(), data.size(), 0);
-							check_error("sending...", err);
-							break;
-						}
-						case "name"_hash:
-							gopher.name = arguments;
-							break;
-    
-						case "tell"_hash:
-							break;
-    
+	    					case "who"_hash:
+    						{
+    							std::string data = "who?: you are " + gopher.name + "\n";
+    							size_t err = send(gopher.clientfd, data.c_str(), data.size(), 0);
+    							check_error("sending...", err);
+    							break;
+    						}
+						    case "name"_hash:
+						    	gopher.name = arguments;
+						    	break;
+
+					        case "tell"_hash:
+					        {
+						        auto pos     = arguments.find(" ");
+						        check_error("tell argument parsing...", pos, [](auto pos){return pos == std::string::npos;});
+						        std::unique_lock<std::mutex> lock(message_mtx);
+						        message.sender   = gopher.name;
+						        message.receiver = arguments.substr(0, pos);
+						        message.data     = arguments.substr(pos + 1) + "\n";
+						        message.cmd      = cmd;
+						        message_cv.notify_all();
+							    break;
+					        }
+
 						case "yell"_hash:
 							break;
-    
+
 						case "exit"_hash:
 							break;
-    
+
 						default:
 							std::cerr << "Unknown command: " << cmd << arguments << std::endl;
 							break;
-						}						
+						}
 					}
 					std::cout << buf;
 				}
 				std::cout << std::this_thread::get_id() << " exited.\n";
 	        };
 
-	        
-	        auto internel_msg_handler = [&gopher, &message, &internel_conn_mtx, &internel_conn]{
-		        std::unique_lock<std::mutex> lock(internel_conn_mtx);
-		        internel_conn.wait(lock, [&](){return message.receiver == gopher.name;});		        
+
+	        auto internel_msg_handler = [&gopher, &message, &message_cv, &message_mtx]{
+		        for(;;)
+		        {
+			        std::unique_lock<std::mutex> lock(message_mtx);
+			        message_cv.wait(lock, [&](){return message.receiver == gopher.name;});
+			        std::cout << "[internel msg handler] " << message.summery();
+			        switch(hash(message.cmd.c_str()))
+			        {
+			            case "who"_hash:
+				            break;
+			            case "name"_hash:
+				            break;
+
+			            case "tell"_hash:
+			            {
+				            std::string data = "[SERVER] " + message.sender + " tells you " + message.data;
+
+				            size_t err = send(gopher.clientfd, data.c_str(), data.size(), 0);
+				            check_error("sending...", err);
+				            break;
+			            }
+
+			            case "yell"_hash:
+				            break;
+
+			            case "exit"_hash:
+				            break;
+
+			            default:
+				            break;
+			        }
+			        message.clear();
+		        }
 	        };
 
 
-	        std::thread conn(comm_handler), inter_msg(internel_msg_handler);
+	        std::thread conn(conn_handler), inter_msg(internel_msg_handler);
 	        conn.join();
 	        inter_msg.join();
-		})); 
+		}));
 	}
 	for(auto &th : chatters)
 		th.join();
