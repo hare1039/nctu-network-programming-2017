@@ -8,10 +8,10 @@
 #endif
 
 extern "C"
-{	
+{
     #include <sys/socket.h>
     #include <unistd.h>
-    #include <sys/types.h> 
+    #include <sys/types.h>
     #include <netinet/in.h>
     #include <arpa/inet.h>
 }
@@ -44,14 +44,14 @@ int main(int argc, char *argv[])
 	check_error("Create socket", socketfd);
 	// socket conn setup
 	sockaddr_in socket_in;
-	std::memset(&socket_in, 0, sizeof(sockaddr_in));	
+	std::memset(&socket_in, 0, sizeof(sockaddr_in));
 	socket_in.sin_family      = PF_INET;
 	socket_in.sin_port        = htons(std::stoi(argv[2]));
 	socket_in.sin_addr.s_addr = inet_addr(argv[1]);
-	
+
 	int err = connect(socketfd, (sockaddr *)&socket_in, sizeof(socket_in));
 	check_error("connection to ...", err);
-	auto receiver = std::async(std::launch::async, [&socketfd](){
+	std::thread socket_reader([&socketfd](){
 			char buf[1000];
 			for(;;)
 			{
@@ -63,11 +63,10 @@ int main(int argc, char *argv[])
 				std::cout << buf;
 			}
 			std::exit(0);
-		}); 
-	for (;;)
+		});
+    std::string command;
+	while (std::getline(std::cin, command))
 	{
-		std::string command;
-		std::getline(std::cin, command);
 		if(command == "exit")
 			break;
 		command.append("\n");
@@ -75,6 +74,6 @@ int main(int argc, char *argv[])
 		check_error("sending...", err);
 	}
 	close(socketfd);
-	
+
 	return 0;
 }
