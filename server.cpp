@@ -7,7 +7,7 @@
 #include <condition_variable> // std::condition_variable
 #include <list>
 #include <regex>
-
+#include <map>
 
 #if __cplusplus < 201103L
     #error("Please compile using -std=c++11 or higher")
@@ -84,6 +84,35 @@ struct Message
 	}
 };
 
+struct Checklist
+{
+	std::map<std::string, bool> list;
+
+	void show_all()
+	{
+		for(auto i: list)
+			std::cout << i.first<< "\n";
+	}
+	
+	bool contains(std::string s)
+	{
+		return list.find(s) != list.end();
+	}
+	bool inject_success(std::string s)
+	{
+		if (this->contains(s))
+			return false;
+		return list[s] = true;
+	}
+	bool remove_success(std::string s)
+	{
+		std::cout << "removing from list: " << s << "\n";
+		if (not contains(s))
+			return false;
+		list.erase(s);
+		return true;
+	}
+};
 
 
 int main(int argc, char *argv[])
@@ -103,23 +132,22 @@ int main(int argc, char *argv[])
 	listen(socketfd, 300);
 
 	std::list<std::thread>  chatters;
+	Checklist               namelist;
 	std::condition_variable message_cv;
 	std::mutex              message_mtx;
 	Message                 message;
 
-
-
 	for(;;)
 	{
-        struct sockaddr_in client_addr;
+		struct sockaddr_in client_addr;
         socklen_t    addrlen  = sizeof(client_addr);
         unsigned int clientfd = accept(socketfd, (struct sockaddr*)&client_addr, &addrlen);
 
         Chatter rat(clientfd, client_addr, addrlen);
-        chatters.push_back(std::thread([&message_cv, &message, &message_mtx, &rat] {
-	        Chatter    gopher = rat;
+        chatters.push_back(std::thread([&message_cv, &message, &message_mtx, &namelist, &rat] {
+	        Chatter gopher = rat;
 
-	        auto conn_handler = [&gopher, &message, &message_cv, &message_mtx]{
+	        std::thread conn([&gopher, &message, &message_cv, &message_mtx, &namelist]{
 		        std::string greet("[Server] Hello, " + gopher.name + "!" +
 		                          " From: " + inet_ntoa(gopher.client_addr.sin_addr) + ":" +
 		                          std::to_string(ntohs(gopher.client_addr.sin_port)) + "\n");
@@ -155,7 +183,7 @@ int main(int argc, char *argv[])
 							cmd = space;
 						}
 
-
+						//std::cout << "RAW: [" << buf << "]\n";
 						switch(hash(cmd.c_str()))
 						{
 	    					case "who"_hash:
@@ -166,18 +194,76 @@ int main(int argc, char *argv[])
     							break;
     						}
 						    case "name"_hash:
-						    	gopher.name = arguments;
-						    	break;
+						    {				    		
+							    if(arguments == "anonymous")
+							    {
+								    std::string data("[Server] ERROR: Username cannot be anonymous\n");
+								    size_t err = send(gopher.clientfd, data.c_str(), data.size(), 0);
+								    check_error("sending...", err);
+								    break;
+							    }
+							    else if(arguments == gopher.name)
+							    {
 
+							    }
+							    else if(namelist.contains(arguments))
+							    {
+								    std::string data("[Server] ERROR: " + arguments + " has been used by others\n");
+								    size_t err = send(gopher.clientfd, data.c_str(), data.size(), 0);
+								    check_error("sending...", err);
+								    break;
+							    }
+							    else if(arguments.size() < 2 || arguments.size() > 12 || not regex_match(arguments, std::regex("[A-Za-z]*")))
+							    {
+								    std::string data("[Server] ERROR: Username can only consists of 2~12 English letters\n");
+								    size_t err = send(gopher.clientfd, data.c_str(), data.size(), 0);
+								    check_error("sending...", err);
+								    break;
+							    }
+
+							    std::string old_name = gopher.name;
+							    
+							    if(namelist.inject_success(arguments))
+								    gopher.name = arguments;
+							    else
+								    std::cout << "Change to same name??\n";
+							    if(not namelist.remove_success(old_name))
+								    std::cout << "name remove failed\n";
+
+							    namelist.inject_success("anonymous");
+							    
+							    for(auto &name: namelist.list)
+							    {
+								    std::unique_lock<std::mutex> lock(message_mtx);
+								    std::cout << "---------------------------- next msg to " +gopher.name+ "\n";
+								    message.sender    = gopher.name;
+								    message.receiver  = name.first;
+								    message.data      = "[Server] " + ((name.first != gopher.name)?  old_name + " is": "You're") +
+									                    " now known as " + arguments + ".\n";
+								    message.cmd       = cmd;
+								    std::cout << "\nnotifing " << name.first << " using msg:\n" + message.summery();
+								    message_cv.notify_all();
+							    }
+
+						    	break;
+						    }
 					        case "tell"_hash:
 					        {
-						        auto pos     = arguments.find(" ");
+						        auto pos         = arguments.find(" ");
 						        check_error("tell argument parsing...", pos, [](auto pos){return pos == std::string::npos;});
 						        std::unique_lock<std::mutex> lock(message_mtx);
 						        message.sender   = gopher.name;
 						        message.receiver = arguments.substr(0, pos);
 						        message.data     = arguments.substr(pos + 1) + "\n";
 						        message.cmd      = cmd;
+						        if(gopher.name == "anonymous")
+							    {
+								    std::string data("[Server] ERROR: You are anonymous\n");
+								    size_t err = send(gopher.clientfd, data.c_str(), data.size(), 0);
+								    check_error("sending...", err);
+								    break;
+							    }
+						        
 						        message_cv.notify_all();
 							    break;
 					        }
@@ -193,34 +279,40 @@ int main(int argc, char *argv[])
 							break;
 						}
 					}
-					std::cout << buf;
 				}
 				std::cout << std::this_thread::get_id() << " exited.\n";
-	        };
+	        }),
 
 
-	        auto internel_msg_handler = [&gopher, &message, &message_cv, &message_mtx]{
+
+		    inter_msg([&gopher, &message, &message_cv, &message_mtx, &namelist]{
 		        for(;;)
 		        {
 			        std::unique_lock<std::mutex> lock(message_mtx);
-			        message_cv.wait(lock, [&](){return message.receiver == gopher.name;});
-			        std::cout << "[internel msg handler] " << message.summery();
+			        message_cv.wait(lock, [&](){
+					        std::cout << gopher.name << " checked weather it needs continue by \n" + message.summery() + ((message.receiver == gopher.name)? "(true)\n": "(false)\n");
+					        return (message.receiver == gopher.name);
+				        });
+
 			        switch(hash(message.cmd.c_str()))
 			        {
 			            case "who"_hash:
 				            break;
 			            case "name"_hash:
+				        {
+					        size_t err = send(gopher.clientfd, message.data.c_str(), message.data.size(), 0);
+				            check_error("sending...", err);
+				            break;
+			            }
 				            break;
 
 			            case "tell"_hash:
 			            {
 				            std::string data = "[SERVER] " + message.sender + " tells you " + message.data;
-
 				            size_t err = send(gopher.clientfd, data.c_str(), data.size(), 0);
 				            check_error("sending...", err);
 				            break;
 			            }
-
 			            case "yell"_hash:
 				            break;
 
@@ -231,11 +323,9 @@ int main(int argc, char *argv[])
 				            break;
 			        }
 			        message.clear();
+			        lock.unlock();
 		        }
-	        };
-
-
-	        std::thread conn(conn_handler), inter_msg(internel_msg_handler);
+	        });
 	        conn.join();
 	        inter_msg.join();
 		}));
