@@ -205,7 +205,13 @@ int main(int argc, char *argv[])
 				for(;;)
 				{
 					int n = recv(gopher.clientfd, buf, sizeof(buf), 0);
-					check_error("recving...", n, [](int n){return n == 0;});
+					check_error("recving...", n, [](int n){return n == 0;}, [&]{
+							// close connection
+							mailbox.remove_and_succeed(gopher.name);
+							close(gopher.clientfd);
+						});
+					if (n == 0)
+						break;
 					buf[n] = '\0';
 					buf_unlimited += buf;
 					auto pos = buf_unlimited.find("\n");
