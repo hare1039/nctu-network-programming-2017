@@ -225,9 +225,18 @@ int main(int argc, char *argv[])
 						{
 	    					case "who"_hash:
     						{
-    							std::string data = "who?: you are " + gopher.name + "\n";
+    							std::string data; 
+							    for(auto &name: mailbox.msgs)
+							    {
+								    auto &mice = mailbox.infos[name.first];
+								    data+= "[Server] " + (Chatter::is_anonymous_name(name.first)? "anonymous": name.first) + " "
+									    +  std::string(inet_ntoa(mice->client_addr.sin_addr)) + ":"
+									    +  std::to_string(ntohs(mice->client_addr.sin_port)) +
+									    ((name.first == gopher.name)? " ->me": "") + "\n";
+							    }
     							size_t err = send(gopher.clientfd, data.c_str(), data.size(), 0);
     							check_error("sending...", err);
+							    
     							break;
     						}
 						    case "name"_hash:
@@ -241,7 +250,6 @@ int main(int argc, char *argv[])
 							    }
 							    else if(arguments == gopher.name)
 							    {
-
 							    }
 							    else if(mailbox.contains(arguments))
 							    {
