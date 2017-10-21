@@ -67,7 +67,7 @@ struct Chatter
 		clientfd(fd),
 		client_addr(in),
 		addrlen(len){}
-	
+
 	Chatter(){} // empty
 	bool is_anonymous()
 	{
@@ -108,7 +108,7 @@ struct Mailbox
 		for(auto i: msgs)
 			std::cout << i.first << " has " << i.second.size() << " messages.\n";
 	}
-	
+
 	bool contains(std::string s)
 	{
 		return msgs.find(s) != msgs.end();
@@ -176,9 +176,9 @@ int main(int argc, char *argv[])
 	            for(int length(10); length; length--)
 		            gopher.name += chrs[pick(rg)];
             } UNTIL(not mailbox.contains(gopher.name));
-            
+
             // notify others
-		    std::unique_lock<std::mutex> login_lock(mailbox_mtx);		        
+		    std::unique_lock<std::mutex> login_lock(mailbox_mtx);
             for(auto &name: mailbox.msgs)
             {
 	            Message message;
@@ -191,13 +191,13 @@ int main(int argc, char *argv[])
             login_lock.unlock();
             mailbox_cv.notify_all();
 
-            
+
 	        std::thread conn([&gopher, &mailbox, &mailbox_cv, &mailbox_mtx]{
-		        std::string greet("[Server] Hello, anonymous!"//"[real: " + gopher.name + "]" 
+		        std::string greet("[Server] Hello, anonymous!"//"[real: " + gopher.name + "]"
 		                          " From: " + std::string(inet_ntoa(gopher.client_addr.sin_addr)) + ":" +
 		                          std::to_string(ntohs(gopher.client_addr.sin_port)) + "\n");
-		        
-		        
+
+
 		        size_t err = send(gopher.clientfd, greet.c_str(), greet.size(), 0);
 		        check_error("sending...", err);
 				char        buf[1000];
@@ -231,7 +231,7 @@ int main(int argc, char *argv[])
 						{
 	    					case "who"_hash:
     						{
-    							std::string data; 
+    							std::string data;
 							    for(auto &name: mailbox.msgs)
 							    {
 								    auto &mice = mailbox.infos[name.first];
@@ -242,11 +242,11 @@ int main(int argc, char *argv[])
 							    }
     							size_t err = send(gopher.clientfd, data.c_str(), data.size(), 0);
     							check_error("sending...", err);
-							    
+
     							break;
     						}
 						    case "name"_hash:
-						    {				    		
+						    {
 							    if(arguments == "anonymous")
 							    {
 								    std::string data("[Server] ERROR: Username cannot be anonymous\n");
@@ -274,16 +274,16 @@ int main(int argc, char *argv[])
 
 							    std::string old_name = gopher.name;
 							    std::cout << "injecting " << arguments << "\n";
-							    
+
 							    std::unique_lock<std::mutex> lock(mailbox_mtx);
 							    if(mailbox.inject_and_succeed(arguments, &gopher))
 								    gopher.name = arguments;
 							    else
 								    std::cout << "Change to same name??\n";
-							    
+
 							    if(not mailbox.remove_and_succeed(old_name))
 								    std::cout << old_name << " remove failed\n";
-							    mailbox.show_all_users();								
+							    //mailbox.show_all_users();
 								for(auto &name: mailbox.msgs)
 							    {
 								    Message message;
@@ -339,14 +339,30 @@ int main(int argc, char *argv[])
 						        check_error("sending...", err);
 							    break;
 					        }
-
-						case "yell"_hash:
-							break;
+						    case "yell"_hash:
+						    {
+							    std::unique_lock<std::mutex> lock(mailbox_mtx);
+							    for(auto &name: mailbox.msgs)
+							    {
+								    Message message;
+								    message.sender    = gopher.name;
+								    message.data      = "[Server] " + (Chatter::is_anonymous_name(gopher.name)? "anonymous": gopher.name) +
+									                    " yells " + arguments + "\n";
+								    message.cmd       = "directsend";
+								    mailbox.msgs[name.first].push(message);
+							    }
+							    lock.unlock();
+							    mailbox_cv.notify_all();
+							    break;
+						    }
 
 						case "exit"_hash:
 							break;
 
 						default:
+							std::string data("[Server] ERROR: Error command.\n");
+							size_t err = send(gopher.clientfd, data.c_str(), data.size(), 0);
+							check_error("sending...", err);
 							std::cerr << "Unknown command: " << cmd << arguments << std::endl;
 							break;
 						}
