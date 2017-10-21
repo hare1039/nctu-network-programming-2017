@@ -147,7 +147,7 @@ struct Mailbox
 
 int main(int argc, char *argv[])
 {
-	check_error("Argument reading", argc, [](int n){return n != 2;});
+	check_error("Argument reading", argc, [](int n){return n != 2;}, []{ std::cout << "Usage: ./server [port]\n";});
 	int socketfd = socket(PF_INET, SOCK_STREAM, 0);
 	check_error("Create socket", socketfd);
 	// socket conn setup
