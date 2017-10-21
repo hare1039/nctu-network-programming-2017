@@ -434,7 +434,7 @@ int main(int argc, char *argv[])
 			            {
 			                case "tell"_hash:
 			                {
-				                std::string data = "[SERVER] " + message.sender + " tells you " + message.data;
+				                std::string data = "[Server] " + message.sender + " tells you " + message.data;
 				                size_t err = send(gopher.clientfd, data.c_str(), data.size(), 0);
 				                check_error("sending...", err);
 				                break;
