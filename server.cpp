@@ -24,6 +24,8 @@ extern "C"
     #include <arpa/inet.h>
 }
 
+#define UNTIL(x) while(!(x))
+
 constexpr
 long long int hash(const char* str, int h = 0)
 {
@@ -167,10 +169,14 @@ int main(int argc, char *argv[])
 		        "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 	        std::mt19937 rg{std::random_device{}()};
             std::uniform_int_distribution<std::string::size_type> pick(0, sizeof(chrs) - 2);
-            
-            for(int length(10); length; length--)
-		        gopher.name += chrs[pick(rg)];
 
+            do
+            {
+	            gopher.name = "anonymous";
+	            for(int length(10); length; length--)
+		            gopher.name += chrs[pick(rg)];
+            } UNTIL(not mailbox.contains(gopher.name));
+            
             // notify others
 		    std::unique_lock<std::mutex> login_lock(mailbox_mtx);		        
             for(auto &name: mailbox.msgs)
