@@ -73,7 +73,7 @@ struct Chatter
 	int clientfd;
 	struct sockaddr_in client_addr;
 	int addrlen;
-
+	bool need_exit = false;
 	std::string name = "anonymous";
 	Chatter(int fd, struct sockaddr_in in, int len):
 		clientfd(fd),
@@ -219,8 +219,23 @@ int main(int argc, char *argv[])
 					int n = recv(gopher.clientfd, buf, sizeof(buf), 0);
 					check_error("recving...", n, [](int n){return n == 0;}, [&]{
 							// close connection
-							mailbox.remove_and_succeed(gopher.name);
+							std::unique_lock<std::mutex> lock(mailbox_mtx);
+							if (not mailbox.remove_and_succeed(gopher.name))
+								std::cout << "remove " << gopher.name << " failed\n";
+							gopher.need_exit = true;
+							std::cout << "\n---- showing mailboxes \n";
+							mailbox.show_all_users();
+							std::cout << "\n---- end\n";
 							close(gopher.clientfd);
+							for(auto &name: mailbox.msgs)
+							{
+							    Message message;
+							    message.sender    = gopher.name;
+							    message.data      = "[Server] " + (Chatter::is_anonymous_name(gopher.name)? "anonymous": gopher.name) +
+								                    " is offline.\n";
+							    message.cmd       = "directsend";
+							    mailbox.msgs[name.first].push(message);
+							}
 						});
 					if (n == 0)
 						break;
@@ -396,14 +411,20 @@ int main(int argc, char *argv[])
 
 
 		    inter_msg([&gopher, &mailbox, &mailbox_cv, &mailbox_mtx]{
-		        for(;;)
+				for(;;)
 		        {
 			        std::unique_lock<std::mutex> lock(mailbox_mtx);
 			        std::cout << gopher.name << " is waiting for invoke...\n";
 			        mailbox_cv.wait(lock, [&](){
-					        std::cout << gopher.name << " checked weather it needs continue " << ((mailbox.msgs[gopher.name].empty())? "(false)\n": "(true)\n");
-					        return not mailbox.msgs[gopher.name].empty();
+					        std::cout << gopher.name << " checked weather it needs continue (" << std::boolalpha << mailbox.msgs[gopher.name].empty() << ") (" << gopher.need_exit << ")\n";
+					        return (not mailbox.msgs[gopher.name].empty()) || gopher.need_exit;
 				        });
+			        if(gopher.need_exit)
+			        {
+				        mailbox.remove_and_succeed(gopher.name);
+				        break;
+			        }
+
 			        while(not mailbox.msgs[gopher.name].empty())
 			        {
 				        Message message = mailbox.msgs[gopher.name].front();
@@ -429,6 +450,7 @@ int main(int argc, char *argv[])
 			        }
 			        mailbox_cv.notify_all();
 		        }
+				std::cout << std::this_thread::get_id() << " exited.\n";
 	        });
 	        conn.join();
 	        inter_msg.join();
