@@ -68,6 +68,8 @@ int main(int argc, char *argv[])
 	{
 		std::string command;
 		std::getline(std::cin, command);
+		if(command == "exit")
+			break;
 		command.append("\n");
 		size_t err = send(socketfd, command.c_str(), command.size(), 0);
 		check_error("sending...", err);

@@ -43,7 +43,7 @@ inline void check_error(std::string && type, int err)
 	if(err < 0)
 	{
 		std::cout << type << " failed. err: [" << err << "]. Reason: " << std::strerror(errno) << std::endl;
-		std::exit(1);
+		//std::exit(1);
 	}
 }
 
@@ -52,7 +52,19 @@ inline void check_error(std::string && type, int err, std::function<bool(int)> &
 	if(pred(err))
 	{
 		std::cout << type << " failed. err: [" << err << "]. Reason: " << std::strerror(errno) << std::endl;
-		std::exit(1);
+		//std::exit(1);
+	}
+}
+
+inline void check_error(std::string && type,
+                        int err,
+                        std::function<bool(int)> &&pred,
+                        std::function<void(void)> &&at_error)
+{
+	if(pred(err))
+	{
+		std::cout << type << " failed. err: [" << err << "]. Reason: " << std::strerror(errno) << std::endl;
+		at_error();
 	}
 }
 
@@ -279,7 +291,7 @@ int main(int argc, char *argv[])
 							    }
 
 							    std::string old_name = gopher.name;
-							    std::cout << "injecting " << arguments << "\n";
+//							    std::cout << "injecting " << arguments << "\n";
 
 							    std::unique_lock<std::mutex> lock(mailbox_mtx);
 							    if(mailbox.inject_and_succeed(arguments, &gopher))
