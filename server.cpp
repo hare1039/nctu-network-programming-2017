@@ -25,12 +25,12 @@ extern "C"
 }
 
 constexpr
-unsigned int hash(const char* str, int h = 0)
+long long int hash(const char* str, int h = 0)
 {
-    return !str[h] ? 5381 : (hash(str, h+1)*33) ^ str[h];
+	return (!str[h] ? 5381 : (hash(str, h+1)*33) ^ str[h] );
 }
 constexpr
-int operator "" _hash(char const* p, size_t)
+long long int operator "" _hash(char const* p, size_t)
 {
 	return hash(p);
 }
@@ -171,7 +171,20 @@ int main(int argc, char *argv[])
             for(int length(10); length; length--)
 		        gopher.name += chrs[pick(rg)];
 
+            // notify others
+		    std::unique_lock<std::mutex> login_lock(mailbox_mtx);		        
+            for(auto &name: mailbox.msgs)
+            {
+	            Message message;
+	            message.sender    = gopher.name;
+	            message.data      = "[Server] Someone is coming!\n";
+	            message.cmd       = "directsend";
+	            mailbox.msgs[name.first].push(message);
+            }
             mailbox.inject_and_succeed(gopher.name, &gopher);
+            login_lock.unlock();
+            mailbox_cv.notify_all();
+
             
 	        std::thread conn([&gopher, &mailbox, &mailbox_cv, &mailbox_mtx]{
 		        std::string greet("[Server] Hello, anonymous!"//"[real: " + gopher.name + "]" 
@@ -196,13 +209,11 @@ int main(int argc, char *argv[])
 						std::string space = buf_unlimited.substr(0,  pos);
 						buf_unlimited     = buf_unlimited.substr(pos + 1);
 						std::string cmd, arguments;
-						std::cout << "parsing: [" << space << "]\n";
 						if(std::regex_match(space, std::regex(".*\\s.*")))
 						{
 							auto pos  = space.find(" ");
 							cmd       = space.substr(0, pos);
 							arguments = space.substr(pos + 1);
-							std::cout << "rcv cmd: [" << cmd << "], arg:[" << arguments << "]\n";
 						}
 						else
 						{
@@ -261,13 +272,12 @@ int main(int argc, char *argv[])
 							    mailbox.show_all_users();								
 								for(auto &name: mailbox.msgs)
 							    {
-								    std::cout << "---------------------------- next msg to " + name.first + "\n";
 								    Message message;
 								    message.sender    = gopher.name;
 								    message.data      = "[Server] " + ((name.first != gopher.name)? (Chatter::is_anonymous_name(old_name)? "anonymous": old_name) + " is": "You're") +
 									                    " now known as " + arguments + ".\n";
-								    message.cmd       = cmd;
-								    std::cout << "\nnotifing " << name.first << " using msg:\n" + message.summery();
+								    message.cmd       = "directsend";
+								    //std::cout << "\nnotifing " << name.first << " using msg:\n" + message.summery();
 								    mailbox.msgs[name.first].push(message);
 							    }
 								lock.unlock();
@@ -331,14 +341,6 @@ int main(int argc, char *argv[])
 			            std::cout << gopher.name << " has message: " << message.summery() << "\n";
 			            switch(hash(message.cmd.c_str()))
 			            {
-			                case "who"_hash:
-				                break;
-			                case "name"_hash:
-				            {
-					            size_t err = send(gopher.clientfd, message.data.c_str(), message.data.size(), 0);
-				                check_error("sending...", err);
-				                break;
-			                }
 			                case "tell"_hash:
 			                {
 				                std::string data = "[SERVER] " + message.sender + " tells you " + message.data;
@@ -346,12 +348,11 @@ int main(int argc, char *argv[])
 				                check_error("sending...", err);
 				                break;
 			                }
-			                case "yell"_hash:
-				                break;
-					    
-			                case "exit"_hash:
-				                break;
-					    
+			                case "directsend"_hash:
+			                {
+				                size_t err = send(gopher.clientfd, message.data.c_str(), message.data.size(), 0);
+				                check_error("sending...", err);
+			                }
 			                default:
 				                break;
 			            }
