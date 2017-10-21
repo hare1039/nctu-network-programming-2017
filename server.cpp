@@ -303,22 +303,40 @@ int main(int argc, char *argv[])
 					        {
 						        auto pos         = arguments.find(" ");
 						        check_error("tell argument parsing...", pos, [](auto pos){return pos == std::string::npos;});
-						        std::unique_lock<std::mutex> lock(mailbox_mtx);
-						        Message message;
-						        message.sender   = gopher.name;
 						        std::string targ = arguments.substr(0, pos);
-						        message.data     = arguments.substr(pos + 1) + "\n";
-						        message.cmd      = cmd;
-						        if(gopher.name == "anonymous")
+						        if(Chatter::is_anonymous_name(gopher.name))
 							    {
 								    std::string data("[Server] ERROR: You are anonymous\n");
 								    size_t err = send(gopher.clientfd, data.c_str(), data.size(), 0);
 								    check_error("sending...", err);
 								    break;
 							    }
+						        else if(targ == "anonymous")
+						        {
+								    std::string data("[Server] ERROR: The client which you designated is anonymous.\n");
+								    size_t err = send(gopher.clientfd, data.c_str(), data.size(), 0);
+								    check_error("sending...", err);
+								    break;
+						        }
+						        else if(not mailbox.contains(targ))
+						        {
+								    std::string data("[Server] ERROR: The receiver doesn't exist.\n");
+								    size_t err = send(gopher.clientfd, data.c_str(), data.size(), 0);
+								    check_error("sending...", err);
+								    break;
+						        }
+
+						        Message message;
+						        message.sender   = gopher.name;
+						        message.data     = arguments.substr(pos + 1) + "\n";
+						        message.cmd      = cmd;
+						        std::unique_lock<std::mutex> lock(mailbox_mtx);
 						        mailbox.msgs[targ].push(message);
-						        
+						        lock.unlock();
 						        mailbox_cv.notify_all();
+						        std::string data("[Server] SUCCESS: Your message has been sent.\n");
+						        size_t err = send(gopher.clientfd, data.c_str(), data.size(), 0);
+						        check_error("sending...", err);
 							    break;
 					        }
 
