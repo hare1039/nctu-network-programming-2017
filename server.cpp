@@ -147,7 +147,7 @@ struct Mailbox
 
 int main(int argc, char *argv[])
 {
-	check_error("Argument reading", argc, [](int n){return n != 2;}, []{ std::cout << "Usage: ./server [port]\n";});
+	check_error("Argument reading", argc, [](int n){return n < 2;}, []{ std::cout << "Usage: ./server [port]\n";});
 	int socketfd = socket(PF_INET, SOCK_STREAM, 0);
 	check_error("Create socket", socketfd);
 	// socket conn setup
@@ -416,7 +416,7 @@ int main(int argc, char *argv[])
 			        std::unique_lock<std::mutex> lock(mailbox_mtx);
 			        std::cout << gopher.name << " is waiting for invoke...\n";
 			        mailbox_cv.wait(lock, [&](){
-					        std::cout << gopher.name << " checked weather it needs continue (" << std::boolalpha << mailbox.msgs[gopher.name].empty() << ") (" << gopher.need_exit << ")\n";
+					        std::cout << gopher.name << " checked weather it needs continue (" << std::boolalpha << not mailbox.msgs[gopher.name].empty() << ") (" << gopher.need_exit << ")\n";
 					        return (not mailbox.msgs[gopher.name].empty()) || gopher.need_exit;
 				        });
 			        if(gopher.need_exit)
