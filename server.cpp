@@ -236,6 +236,8 @@ int main(int argc, char *argv[])
 							    message.cmd       = "directsend";
 							    mailbox.msgs[name.first].push(message);
 							}
+							lock.unlock();
+							mailbox_cv.notify_all();
 						});
 					if (n == 0)
 						break;
