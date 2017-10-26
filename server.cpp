@@ -12,7 +12,7 @@
 #include <random>
 
 #if __cplusplus < 201103L
-    #error("Please compile using -std=c++11 or higher")
+    #error("Please compile using -pthread & -std=c++11 or higher")
 #endif
 
 extern "C"
@@ -293,6 +293,9 @@ int main(int argc, char *argv[])
 							    }
 							    else if(arguments == gopher.name)
 							    {
+								    std::string data("[Server] Ahhh... same name?\n");
+								    size_t err = send(gopher.clientfd, data.c_str(), data.size(), 0);
+								    check_error("sending...", err);
 							    }
 							    else if(mailbox.contains(arguments))
 							    {
@@ -314,13 +317,14 @@ int main(int argc, char *argv[])
 
 							    std::unique_lock<std::mutex> lock(mailbox_mtx);
 							    if(mailbox.inject_and_succeed(arguments, &gopher))
+							    {
 								    gopher.name = arguments;
+								    if(not mailbox.remove_and_succeed(old_name))
+									    std::cout << old_name << " remove failed\n";
+							    }
 							    else
 								    std::cout << "Change to same name??\n";
 
-							    if(not mailbox.remove_and_succeed(old_name))
-								    std::cout << old_name << " remove failed\n";
-							    //mailbox.show_all_users();
 								for(auto &name: mailbox.msgs)
 							    {
 								    Message message;
