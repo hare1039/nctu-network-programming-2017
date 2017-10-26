@@ -1,7 +1,7 @@
 #include <iostream>
 #include <cstring>
 #include <tuple>
-#include <future>
+#include <thread>
 
 #if __cplusplus < 201103L
     #error("Please compile using -std=c++11 or higher")
@@ -35,8 +35,6 @@ inline void check_error(std::string && type, int err, std::function<bool(int)> f
 }
 
 
-
-
 int main(int argc, char *argv[])
 {
 	check_error("Argument reading", argc, [](int n){return n != 3;});
@@ -61,6 +59,7 @@ int main(int argc, char *argv[])
 				if(std::string(buf) == "exit\n")
 					break;
 				std::cout << buf;
+				std::strcpy(buf, "");
 			}
 			std::exit(0);
 		});
@@ -75,5 +74,5 @@ int main(int argc, char *argv[])
 	}
 	close(socketfd);
 
-	return 0;
+	std::exit(0);
 }
